@@ -16,4 +16,5 @@ Searching for deleted files through the Event Log
 
 ## Version History
 ```
+25.03.2025 -  Исправлена фильтрация вреенных файлов
 ```
