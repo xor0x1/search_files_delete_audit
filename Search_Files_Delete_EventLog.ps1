@@ -85,32 +85,32 @@ function Search-Events {
         Get-WinEvent -FilterHashtable @{LogName="Security";StartTime=$startDate;EndTime=$endDate;Id=4663} | ForEach-Object {
             $event = [xml]$_.ToXml()
             if ($event) {
-                $File = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'ObjectName' } | Select-Object -ExpandProperty '#text'
-                if (-not ($File -like "*.tmp") -and -not ($File -like "~$*")) {
-                    if (-not [string]::IsNullOrWhiteSpace($searchFile)) {
-               
-                        if ($File -like "*$searchFile*") {
-                            $Time = Get-Date $_.TimeCreated -UFormat "%Y-%m-%d %H:%M:%S"
-                            $User = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'SubjectUserName' } | Select-Object -ExpandProperty '#text'
-                            $Computer = $event.Event.System.computer
-                            $row = $dataTable.NewRow()
-                            $row."Время события" = $Time
-                            $row."Имя файла" = $File
-                            $row."Пользователь" = $User
-                            $row."Компьютер" = $Computer
-                            $dataTable.Rows.Add($row)
-                        }
-                    } else {
-                        $Time = Get-Date $_.TimeCreated -UFormat "%Y-%m-%d %H:%M:%S"
-                        $User = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'SubjectUserName' } | Select-Object -ExpandProperty '#text'
-                        $Computer = $event.Event.System.computer
-                        $row = $dataTable.NewRow()
-                        $row."Время события" = $Time
-                        $row."Имя файла" = $File
-                        $row."Пользователь" = $User
-                        $row."Компьютер" = $Computer
+                $File = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'ObjectName' -and $_.'#text' -notmatch ".*\.tmp" -and $_.'#text' -notmatch ".*~\$.*" -and $_.'#text' -notmatch ".*~lock.*" } | Select-Object -ExpandProperty '#text'
+                if (-not [string]::IsNullOrWhiteSpace($searchFile) -and $File -like "*$searchFile*") {
+                    $Time = Get-Date $_.TimeCreated -UFormat "%Y-%m-%d %H:%M:%S"
+                    $User = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'SubjectUserName' } | Select-Object -ExpandProperty '#text'
+                    $Computer = $event.Event.System.computer
+                    $row = $dataTable.NewRow()
+                    $row."Время события" = $Time
+                    $row."Имя файла" = $File
+                    $row."Пользователь" = $User
+                    $row."Компьютер" = $Computer
+                    # Проверяем, что строка не была отфильтрована, прежде чем добавить ее в таблицу
+                    if ($File -notmatch ".*\.tmp" -and $File -notmatch ".*~\$.*" -and $File -notmatch ".*~lock.*") {
                         $dataTable.Rows.Add($row)
-                        
+                    }
+                } elseif ([string]::IsNullOrWhiteSpace($searchFile)) {
+                    $Time = Get-Date $_.TimeCreated -UFormat "%Y-%m-%d %H:%M:%S"
+                    $User = $event.Event.EventData.Data | Where-Object { $_.Name -eq 'SubjectUserName' } | Select-Object -ExpandProperty '#text'
+                    $Computer = $event.Event.System.computer
+                    $row = $dataTable.NewRow()
+                    $row."Время события" = $Time
+                    $row."Имя файла" = $File
+                    $row."Пользователь" = $User
+                    $row."Компьютер" = $Computer
+                    # Проверяем, что строка не была отфильтрована, прежде чем добавить ее в таблицу
+                    if ($File -notmatch ".*\.tmp" -and $File -notmatch ".*~\$.*" -and $File -notmatch ".*~lock.*") {
+                        $dataTable.Rows.Add($row)
                     }
                 }
             }
