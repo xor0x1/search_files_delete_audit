@@ -21,7 +21,7 @@ $form.Text = "Поиск удаленных файлов через Журнал
 $form.Size = New-Object System.Drawing.Size(900,600)
 $form.StartPosition = "CenterScreen"
 
-# Создаем элементы управления для выбора дат
+# Элементы управления
 $labelStartDate = New-Object System.Windows.Forms.Label
 $labelStartDate.Location = New-Object System.Drawing.Point(10,20)
 $labelStartDate.Size = New-Object System.Drawing.Size(100,20)
@@ -42,7 +42,6 @@ $dateTimePickerEnd = New-Object System.Windows.Forms.DateTimePicker
 $dateTimePickerEnd.Location = New-Object System.Drawing.Point(120,47)
 $form.Controls.Add($dateTimePickerEnd)
 
-# Создаем текстовое поле и кнопку для поиска файла
 $labelSearchFile = New-Object System.Windows.Forms.Label
 $labelSearchFile.Location = New-Object System.Drawing.Point(10,75)
 $labelSearchFile.Size = New-Object System.Drawing.Size(100,20)
@@ -60,101 +59,83 @@ $buttonSearchFile.Size = New-Object System.Drawing.Size(75,20)
 $buttonSearchFile.Text = "Поиск"
 $form.Controls.Add($buttonSearchFile)
 
-# Создаем таблицу для отображения результатов поиска
 $dataGridView = New-Object System.Windows.Forms.DataGridView
-$dataGridView.Location = New-Object System.Drawing.Point(10,100)
-$dataGridView.Size = New-Object System.Drawing.Size(864,450)
-$dataGridView.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-$dataGridView.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+$dataGridView.Location = New-Object System.Drawing.Point(10,130)
+$dataGridView.Size = New-Object System.Drawing.Size(864,420)
+$dataGridView.Anchor = "Top, Bottom, Left, Right"
+$dataGridView.AutoSizeColumnsMode = 'Fill'
 $dataGridView.AllowUserToAddRows = $false
 $form.Controls.Add($dataGridView)
 
-# Определяем функцию для поиска событий и вывода в таблицу
+$progressBar = New-Object System.Windows.Forms.ProgressBar
+$progressBar.Location = New-Object System.Drawing.Point(10,105)
+$progressBar.Size = New-Object System.Drawing.Size(864,20)
+$progressBar.Style = 'Marquee'
+$progressBar.MarqueeAnimationSpeed = 30
+$progressBar.Visible = $false
+$form.Controls.Add($progressBar)
+
 function Search-Events {
-    $currentDate = Get-Date
+    $progressBar.Visible = $true
+    $form.Refresh()
+
     $startDate = $dateTimePickerStart.Value.Date
-    $endDate = $dateTimePickerEnd.Value.Date
+    $endDate = $dateTimePickerEnd.Value.Date.AddDays(1).AddSeconds(-1)
+    $searchFile = $textBoxSearchFile.Text.Trim()
+    $filePattern = if (![string]::IsNullOrWhiteSpace($searchFile)) { ".*$searchFile.*" } else { ".*" }
+    #$regex = [regex]"(?i)(?!.*\.tmp|.*~\$.*|.*~lock.*)$filePattern"
+    $regex = [regex]"(?i)^(?!.*(?:\.tmp$|~\$|~lock\.|\\Temp\\)).*$filePattern"
 
-    # Проверка, что даты начала и окончания не превышают текущую дату
-    if ($startDate -gt $currentDate) {
-        [System.Windows.Forms.MessageBox]::Show("Начальная дата не может быть больше текущей даты", "Некорректный ввод", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        return
-    }
-
-    if ($endDate -gt $currentDate) {
-        [System.Windows.Forms.MessageBox]::Show("Конечная дата не может быть больше текущей даты", "Некорректный ввод", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        return
-    }
-
-    # Проверка корректности дат
-    if ($endDate -lt $startDate) {
-        [System.Windows.Forms.MessageBox]::Show("Конечная дата должна быть после начальной даты", "Некорректный ввод", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-        return
-    }
-
-        # Очистка источника данных перед новым поиском
     $dataTable = New-Object System.Data.DataTable
-    $dataGridView.DataSource = $dataTable
-
-    try {
-        # Инициализация
-        $startDate = $dateTimePickerStart.Value.Date
-        $endDate = $dateTimePickerEnd.Value.Date.AddDays(1).AddSeconds(-1)
-        $searchFile = $textBoxSearchFile.Text
-        $stage = "Инициализация переменных"
-
-        # Создание DataTable
-        $dataTable = New-Object System.Data.DataTable
-
-        # Подготовка данных для отображения
-        $columns = "Время события", "Имя файла", "Пользователь", "Компьютер"
-        foreach ($column in $columns) {
-            [void]$dataTable.Columns.Add($column)
-        }
-
-        $stage = "Создание DataTable"
-
-        # Запрос к журналу событий
-        $filterHashtable = @{
-            LogName   = "Security"
-            StartTime = $startDate
-            EndTime   = $endDate
-            Id        = 4663
-        }
-        $stage = "Запрос к журналу событий"
-        $events = Get-WinEvent -FilterHashtable $filterHashtable
-
-        # Обработка событий
-        $stage = "Обработка событий"
-        foreach ($event in $events) {
-            $eventXml = [xml]$event.ToXml()
-            $eventData = $eventXml.Event.EventData.Data
-            $file = $eventData | Where-Object { $_.Name -eq 'ObjectName' } | Select-Object -ExpandProperty '#text'
-            if ($file -and $file -notmatch ".*\.tmp" -and $file -notmatch ".*~\$.*" -and $file -notmatch ".*~lock.*") {
-                if ([string]::IsNullOrWhiteSpace($searchFile) -or $file -like "*$searchFile*") {
-                    $time = Get-Date $event.TimeCreated -UFormat "%Y-%m-%d %H:%M:%S"
-                    $user = $eventData | Where-Object { $_.Name -eq 'SubjectUserName' } | Select-Object -ExpandProperty '#text'
-                    $computer = $eventXml.Event.System.Computer
-                    $row = $dataTable.NewRow()
-                    $row."Время события" = $time
-                    $row."Имя файла" = $file
-                    $row."Пользователь" = $user
-                    $row."Компьютер" = $computer
-                    $dataTable.Rows.Add($row)
-                }
-            }
-         }
-
-        $dataGridView.DataSource = $dataTable
-    } catch {
-        [System.Windows.Forms.MessageBox]::Show("Произошла ошибка на этапе '$stage': " + $_.Exception.Message, "Ошибка", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    foreach ($col in @("Время события", "Имя файла", "Пользователь", "Компьютер")) {
+        [void]$dataTable.Columns.Add($col)
     }
+
+    # Загружаем события
+    $events4660 = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4660; StartTime = $startDate; EndTime = $endDate } -ErrorAction SilentlyContinue
+    $events4663 = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4663; StartTime = $startDate; EndTime = $endDate } -ErrorAction SilentlyContinue
+
+    $map4663 = @{}
+    foreach ($e in $events4663) {
+        $xml = [xml]$e.ToXml()
+        $data = $xml.Event.EventData.Data
+        $handleId = ($data | Where-Object { $_.Name -eq 'HandleId' }).'#text'
+        $file = ($data | Where-Object { $_.Name -eq 'ObjectName' }).'#text'
+        $accessMask = ($data | Where-Object { $_.Name -eq 'AccessMask' }).'#text'
+
+        if ($file -and $handleId -and $accessMask -band 0x10000) {
+            $map4663[$handleId] = @{
+                File = $file
+                Time = $e.TimeCreated
+                User = ($data | Where-Object { $_.Name -eq 'SubjectUserName' }).'#text'
+                Computer = $xml.Event.System.Computer
+                Access = $accessMask
+            }
+        }
+    }
+
+    foreach ($e in $events4660) {
+        $xml = [xml]$e.ToXml()
+        $data = $xml.Event.EventData.Data
+        $handleId = ($data | Where-Object { $_.Name -eq 'HandleId' }).'#text'
+
+        if ($handleId -and $map4663.ContainsKey($handleId)) {
+            $info = $map4663[$handleId]
+            if ($regex.IsMatch($info.File)) {
+                $row = $dataTable.NewRow()
+                $row."Время события" = $info.Time.ToString("yyyy-MM-dd HH:mm:ss")
+                $row."Имя файла" = $info.File
+                $row."Пользователь" = $info.User
+                $row."Компьютер" = $info.Computer
+                $dataTable.Rows.Add($row)
+            }
+        }
+    }
+
+    $dataGridView.DataSource = $dataTable
+    $progressBar.Visible = $false
 }
 
-# Подключаем функцию к кнопке "Поиск"
-$buttonSearchFile.Add_Click({
-    Search-Events
-})
-
-# Показываем форму
+$buttonSearchFile.Add_Click({ Search-Events })
 $form.ShowDialog() | Out-Null
+
